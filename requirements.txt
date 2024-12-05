@@ -7,4 +7,3 @@ seaborn==0.13.2
 pandas==2.2.2
 scikit-learn==1.4.2
 jupyterlab==4.0.11
-git 
