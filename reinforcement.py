@@ -105,9 +105,10 @@ def draw_letter_prompt(letter_queue, save_folder, image_id):
     letter_label.pack()
 
     def paint(event):
-        x1, y1 = (event.x - 1), (event.y - 1)
-        x2, y2 = (event.x + 1), (event.y + 1)
+        x1, y1 = (event.x - 5), (event.y - 5)
+        x2, y2 = (event.x + 5), (event.y + 5)
         canvas.create_oval(x1, y1, x2, y2, fill="black", width=10)
+        canvas.create_line(event.x, event.y, event.x, event.y, fill="black", width=10)
 
     def save():
         nonlocal image_id
@@ -115,10 +116,10 @@ def draw_letter_prompt(letter_queue, save_folder, image_id):
         canvas.update()
 
         # Get the canvas's exact bounding box relative to the screen
-        x = canvas.winfo_rootx() + 200
+        x = canvas.winfo_rootx() + 400
         y = canvas.winfo_rooty()
-        x1 = x + canvas.winfo_width()
-        y1 = y + canvas.winfo_height()
+        x1 = x + canvas.winfo_width() + 500
+        y1 = y + canvas.winfo_height() + 500
 
         # Capture the canvas area
         image = ImageGrab.grab(bbox=(x, y, x1, y1)).convert("L")
@@ -260,7 +261,9 @@ def reinforcement_loop(model, characters, user_images, save_folder, num_epochs=5
             image = Image.open(image_path).resize((160, 120)).convert('L')
             user_images[char].append(np.array(image) / 255.0)
 
-    print("All characters have been trained and evaluated!")
+    # Save the trained model weights
+    torch.save(model.state_dict(), os.path.join(save_folder, 'nathan.pth'))
+    print("All characters have been trained and evaluated! Model weights saved.")
 
 
 # Main
