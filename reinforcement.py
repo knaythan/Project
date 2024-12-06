@@ -80,12 +80,29 @@ class CNNModel(nn.Module):
         return x
 
 # Drawing prompt function
-def draw_letter_prompt(letter, save_folder, image_id):
+def draw_letter_prompt(letter_queue, save_folder, image_id):
+    """
+    A function to prompt the user to draw letters sequentially.
+
+    Args:
+        letter_queue (list): A list of letters to draw, processed sequentially.
+        save_folder (str): Folder to save the images.
+        image_id (int): Starting ID for saved images.
+    """
     os.makedirs(save_folder, exist_ok=True)
+
+    # Initialize tkinter window
     root = tk.Tk()
-    root.title(f"Draw the Letter: {letter}")
+    root.attributes("-fullscreen", True)
+
     canvas = tk.Canvas(root, width=640, height=480, bg="white")
     canvas.pack()
+
+    current_letter_index = [0]  # Use a mutable container to track the current index
+
+    # Label to show the current letter
+    letter_label = tk.Label(root, text=f"Draw the Letter: {letter_queue[0]}", font=("Helvetica", 24))
+    letter_label.pack()
 
     def paint(event):
         x1, y1 = (event.x - 1), (event.y - 1)
@@ -93,26 +110,51 @@ def draw_letter_prompt(letter, save_folder, image_id):
         canvas.create_oval(x1, y1, x2, y2, fill="black", width=10)
 
     def save():
-        # Get the canvas's exact bounding box relative to the screen
+        nonlocal image_id
+        # Update canvas to render everything
         canvas.update()
-        x = canvas.winfo_rootx()
+
+        # Get the canvas's exact bounding box relative to the screen
+        x = canvas.winfo_rootx() + 200
         y = canvas.winfo_rooty()
         x1 = x + canvas.winfo_width()
         y1 = y + canvas.winfo_height()
-        
-        # Capture the exact canvas area
+
+        # Capture the canvas area
         image = ImageGrab.grab(bbox=(x, y, x1, y1)).convert("L")
-        
+
+        # Crop a few pixels from the left, right, top, and bottom to eliminate any unwanted background
+        border_crop = 5  # Adjust this value to crop additional margins
+        width, height = image.size
+        cropped_image = image.crop((border_crop, border_crop, width - border_crop, height - border_crop))
+
         # Resize and save the image
-        image = image.resize((160, 120))
+        resized_image = cropped_image.resize((160, 120))  # Resize to the desired dimensions
         image_path = os.path.join(save_folder, f"{image_id:04d}.png")
-        image.save(image_path)
+        resized_image.save(image_path)
         print(f"Saved image to {image_path}")
-        root.destroy()
+        image_id += 1
+
+        # Clear the canvas for the next letter
+        clear()
+
+        # Advance to the next letter
+        current_letter_index[0] += 1
+        if current_letter_index[0] < len(letter_queue):
+            next_letter = letter_queue[current_letter_index[0]]
+            letter_label.config(text=f"Draw the Letter: {next_letter}")
+        else:
+            print("All letters have been drawn. Closing the window.")
+            root.destroy()
 
     def clear():
         canvas.delete("all")
 
+    def exit_program():
+        print("Exiting the program.")
+        root.destroy()
+
+    # Bind events and add buttons
     canvas.bind("<B1-Motion>", paint)
 
     button_frame = tk.Frame(root)
@@ -124,6 +166,10 @@ def draw_letter_prompt(letter, save_folder, image_id):
     clear_button = tk.Button(button_frame, text="Clear", command=clear)
     clear_button.pack(side="left", padx=5)
 
+    exit_button = tk.Button(button_frame, text="Exit", command=exit_program)
+    exit_button.pack(side="left", padx=5)
+
+    # Run the tkinter main loop
     root.mainloop()
 
 
@@ -215,8 +261,6 @@ def reinforcement_loop(model, characters, user_images, save_folder, num_epochs=5
             user_images[char].append(np.array(image) / 255.0)
 
     print("All characters have been trained and evaluated!")
-
-
 
 
 # Main
