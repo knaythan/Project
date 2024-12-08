@@ -9,85 +9,19 @@ from collections import defaultdict
 from sklearn.metrics import confusion_matrix
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import ToTensor
-
-# Enhanced CNN
-class CNNModel(nn.Module):
-    def __init__(self, num_classes):
-        super(CNNModel, self).__init__()
-
-        self.num_classes = num_classes
-
-        # Convolutional blocks
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)  # Output: 32x320x240
-        self.bn1 = nn.BatchNorm2d(32)
-        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)  # Output: 32x160x120
-
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)  # Output: 64x160x120
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)  # Output: 64x80x60
-
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)  # Output: 128x80x60
-        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)  # Output: 128x40x30
-
-        self.conv4 = nn.Conv2d(128, 256, kernel_size=3, padding=1)  # Output: 256x40x30
-        self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2)  # Output: 256x20x15
-
-        self.conv5 = nn.Conv2d(256, 512, kernel_size=3, padding=1)  # Output: 512x20x15
-        self.pool5 = nn.MaxPool2d(kernel_size=2, stride=2)  # Output: 512x10x7
-
-        # Fully connected layers are initialized dynamically
-        self.fc1 = None
-        self.fc2 = None
-        self.fc3 = None
-
-        self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(0.5)
-
-    def initialize_fc_layers(self, input_shape):
-        """Initialize the fully connected layers dynamically based on the input shape."""
-        with torch.no_grad():
-            dummy_input = torch.zeros(1, *input_shape)
-            x = self.pool1(self.bn1(self.conv1(dummy_input)))
-            x = self.pool2(self.conv2(x))
-            x = self.pool3(self.conv3(x))
-            x = self.pool4(self.conv4(x))
-            x = self.pool5(self.conv5(x))
-            flattened_size = x.numel()  # Total elements after flattening
-
-        # Dynamically initialize fully connected layers
-        self.fc1 = nn.Linear(flattened_size, 512)
-        self.fc2 = nn.Linear(512, 256)
-        self.fc3 = nn.Linear(256, self.num_classes)
-
-        # Print the initialized sizes for debugging
-        print(f"Initialized fc1 with input size {flattened_size} and output size 512")
-        print(f"Initialized fc2 with input size 512 and output size 256")
-        print(f"Initialized fc3 with input size 256 and output size {self.num_classes}")
-
-    def forward(self, x):
-        # Convolutional blocks
-        x = self.pool1(self.bn1(self.conv1(x)))
-        x = self.pool2(self.conv2(x))
-        x = self.pool3(self.conv3(x))
-        x = self.pool4(self.conv4(x))
-        x = self.pool5(self.conv5(x))
-
-        # Flatten and pass through fully connected layers
-        x = x.view(x.size(0), -1)  # Flatten
-        x = self.dropout(self.relu(self.fc1(x)))
-        x = self.dropout(self.relu(self.fc2(x)))
-        x = self.fc3(x)
-
-        return x
+from model import CNNModel
+import pickle
 
 # Drawing prompt function
-def draw_letter_prompt(letter_queue, save_folder, image_id):
+def draw_letter_prompt(letter_queue, save_folder, image_id, csv_writer):
     """
-    A function to prompt the user to draw letters sequentially.
+    A function to prompt the user to draw characters sequentially.
 
     Args:
         letter_queue (list): A list of letters to draw, processed sequentially.
         save_folder (str): Folder to save the images.
         image_id (int): Starting ID for saved images.
+        csv_writer (csv.writer): CSV writer object to save image paths and labels.
     """
     os.makedirs(save_folder, exist_ok=True)
 
@@ -95,20 +29,20 @@ def draw_letter_prompt(letter_queue, save_folder, image_id):
     root = tk.Tk()
     root.attributes("-fullscreen", True)
 
-    canvas = tk.Canvas(root, width=640, height=480, bg="white")
+    canvas = tk.Canvas(root, width=1200, height=900, bg="white")
     canvas.pack()
 
     current_letter_index = [0]  # Use a mutable container to track the current index
 
     # Label to show the current letter
-    letter_label = tk.Label(root, text=f"Draw the Letter: {letter_queue[0]}", font=("Helvetica", 24))
+    letter_label = tk.Label(root, text=f"Draw the character: {letter_queue[0]}", font=("Helvetica", 24))
     letter_label.pack()
 
     def paint(event):
-        x1, y1 = (event.x - 5), (event.y - 5)
-        x2, y2 = (event.x + 5), (event.y + 5)
-        canvas.create_oval(x1, y1, x2, y2, fill="black", width=10)
-        canvas.create_line(event.x, event.y, event.x, event.y, fill="black", width=10)
+        x1, y1 = (event.x - 30), (event.y - 30)
+        x2, y2 = (event.x + 30), (event.y + 30)
+        canvas.create_oval(x1, y1, x2, y2, fill="black", width=1)
+        
 
     def save():
         nonlocal image_id
@@ -116,10 +50,10 @@ def draw_letter_prompt(letter_queue, save_folder, image_id):
         canvas.update()
 
         # Get the canvas's exact bounding box relative to the screen
-        x = canvas.winfo_rootx() + 400
+        x = canvas.winfo_rootx() + 175
         y = canvas.winfo_rooty()
-        x1 = x + canvas.winfo_width() + 500
-        y1 = y + canvas.winfo_height() + 500
+        x1 = x + canvas.winfo_width() + 175
+        y1 = y + canvas.winfo_height() + 125
 
         # Capture the canvas area
         image = ImageGrab.grab(bbox=(x, y, x1, y1)).convert("L")
@@ -134,6 +68,10 @@ def draw_letter_prompt(letter_queue, save_folder, image_id):
         image_path = os.path.join(save_folder, f"{image_id:04d}.png")
         resized_image.save(image_path)
         print(f"Saved image to {image_path}")
+        
+        # Save the image path and label to the CSV file
+        csv_writer.writerow([f"{image_id:04d}.png", letter_queue[current_letter_index[0]]])
+        
         image_id += 1
 
         # Clear the canvas for the next letter
@@ -153,6 +91,7 @@ def draw_letter_prompt(letter_queue, save_folder, image_id):
 
     def exit_program():
         print("Exiting the program.")
+        exit()
         root.destroy()
 
     # Bind events and add buttons
@@ -174,7 +113,6 @@ def draw_letter_prompt(letter_queue, save_folder, image_id):
     root.mainloop()
 
 
-
 # Custom Dataset for Reinforcement
 class UserDrawnDataset(Dataset):
     def __init__(self, images, labels, transform=None):
@@ -191,17 +129,25 @@ class UserDrawnDataset(Dataset):
         if self.transform:
             image = self.transform(image)
         return image, label
-
-
-def reinforcement_loop(model, characters, user_images, save_folder, num_epochs=5, batch_size=16, accuracy_threshold=0.85):
+    
+def reinforcement_loop(model, characters, user_images, save_folder, weights_folder, label_to_letter_dict_path, num_epochs=5, batch_size=16):
     device = torch.device("cpu")
     model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     criterion = nn.CrossEntropyLoss()
     transform = ToTensor()
 
+    # Load the label to letter dictionary from the pkl file
+    with open(label_to_letter_dict_path, 'rb') as f:
+        label_to_letter_dict = pickle.load(f)
+        
+    print(label_to_letter_dict)
+
+    draw_counts = {char: 0 for char in characters}
+
     for char in characters:
-        while True:
+        correct_predictions_in_a_row = 0
+        while correct_predictions_in_a_row < 3:
             y_true, y_pred = [], []
             images, labels = [], []
 
@@ -244,54 +190,68 @@ def reinforcement_loop(model, characters, user_images, save_folder, num_epochs=5
                     y_true.extend(targets.cpu().numpy())
                     y_pred.extend(preds.cpu().numpy())
 
-            # Compute Accuracy
-            accuracy = np.mean(np.array(y_true) == np.array(y_pred)) * 100
-            print(f"Accuracy for '{char}': {accuracy:.2f}%")
+            # Translate labels to characters
+            y_true_chars = [label_to_letter_dict[label] for label in y_true]
+            y_pred_chars = [label_to_letter_dict[label] for label in y_pred]
 
-            # Check if accuracy is sufficient
-            if accuracy >= 85.0:
-                print(f"Accuracy for '{char}' is above 85%. Moving to the next character.")
-                break
+            # Print the numerical label that the model guessed
+            print(f"True labels: {y_true}")
+            print(f"Predicted labels: {y_pred}")
 
-            # If accuracy is below 85%, collect more data
-            print(f"Accuracy for '{char}' is below 85.00%. Collecting more data.")
-            new_image_id = sum(len(user_images[k]) for k in user_images) + 1
-            draw_letter_prompt(char, save_folder, new_image_id)
-            image_path = os.path.join(save_folder, f"{new_image_id:04d}.png")
-            image = Image.open(image_path).resize((160, 120)).convert('L')
-            user_images[char].append(np.array(image) / 255.0)
+            # Check if the model predicted correctly
+            if all(np.array(y_true_chars) == np.array(y_pred_chars)):
+                correct_predictions_in_a_row += 1
+                print(f"Model predicted '{char}' correctly {correct_predictions_in_a_row} times in a row.")
+            else:
+                correct_predictions_in_a_row = 0
+                print(f"Model did not predict '{char}' correctly. Collecting more data.")
+                new_image_id = sum(len(user_images[k]) for k in user_images) + 1
+                with open(os.path.join(save_folder, "image_mapping.csv"), "a", newline="") as file:
+                    csv_writer = csv.writer(file)
+                    draw_letter_prompt([char], save_folder, new_image_id, csv_writer)
+                image_path = os.path.join(save_folder, f"{new_image_id:04d}.png")
+                image = Image.open(image_path).resize((160, 120)).convert('L')
+                user_images[char].append(np.array(image) / 255.0)
+                draw_counts[char] += 1
 
-    # Save the trained model weights
-    torch.save(model.state_dict(), os.path.join(save_folder, 'nathan.pth'))
-    print("All characters have been trained and evaluated! Model weights saved.")
+    print("All characters have been trained and evaluated!")
+    print("Draw counts:", draw_counts)
+
+    # Save the reinforced model weights
+    reinforced_weights_path = os.path.join(weights_folder, 'reinforced_cnn_weights.pth')
+    torch.save(model.state_dict(), reinforced_weights_path)
+    print(f"Reinforced model weights saved to {reinforced_weights_path}")
 
 
 # Main
 if __name__ == "__main__":
-    characters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    characters = "0123456789Oom"
     save_folder = "user_drawings"
+    weights_folder = "weights"
+    label_to_letter_dict_path = os.path.join(weights_folder, "label_to_letter_dict.pkl")
     user_images = defaultdict(list)
 
-    if not os.path.exists(os.path.join(save_folder, "image_mapping.csv")):
-        for char in characters:
-            image_id = len(user_images) + 1
-            draw_letter_prompt(char, save_folder, image_id)
-            image_path = os.path.join(save_folder, f"{image_id:04d}.png")
-            image = Image.open(image_path).resize((160, 120))
-            user_images[char].append(np.array(image) / 255.0)
-        with open(os.path.join(save_folder, "image_mapping.csv"), "w", newline="") as file:
-            writer = csv.writer(file)
-            writer.writerow(["Path", "Label"])
-            for char, imgs in user_images.items():
-                for img_id, _ in enumerate(imgs, 1):
-                    writer.writerow([f"{img_id:04d}.png", char])
-    else:
+    existing_characters = set()
+    if os.path.exists(os.path.join(save_folder, "image_mapping.csv")):
         with open(os.path.join(save_folder, "image_mapping.csv"), "r") as file:
             reader = csv.reader(file)
             next(reader)
             for row in reader:
                 path, char = row
+                existing_characters.add(char)
                 image = Image.open(os.path.join(save_folder, path)).resize((160, 120))
+                user_images[char].append(np.array(image) / 255.0)
+
+    with open(os.path.join(save_folder, "image_mapping.csv"), "a", newline="") as file:
+        csv_writer = csv.writer(file)
+        if not existing_characters:
+            csv_writer.writerow(["Path", "Label"])
+        for char in characters:
+            if char not in existing_characters:
+                image_id = sum(len(user_images[k]) for k in user_images) + 1
+                draw_letter_prompt([char], save_folder, image_id, csv_writer)
+                image_path = os.path.join(save_folder, f"{image_id:04d}.png")
+                image = Image.open(image_path).resize((160, 120))
                 user_images[char].append(np.array(image) / 255.0)
 
     # Instantiate the model and load the weights
@@ -302,10 +262,9 @@ if __name__ == "__main__":
     input_shape = (1, 160, 120)
     model.initialize_fc_layers(input_shape)
 
-    weights_path = './weights/79accuracy.pth'
+    weights_path = './weights/cnn_weights.pth'
     model.load_state_dict(torch.load(weights_path, map_location=torch.device('cpu')))
     model.eval()
 
     print("Model loaded successfully!")
-    reinforcement_loop(model, characters, user_images, save_folder)
-
+    reinforcement_loop(model, characters, user_images, save_folder, weights_folder, label_to_letter_dict_path)
