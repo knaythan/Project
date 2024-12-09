@@ -1,0 +1,127 @@
+%% bare_jrnl.tex
+%%
+
+\documentclass[journal]{IEEEtran}
+
+% *** GRAPHICS RELATED PACKAGES ***
+\ifCLASSINFOpdf
+\else
+\fi
+
+% *** URL PACKAGE ***
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage[backend=bibtex]{biblatex}
+\addbibresource{biblio.bib}
+\usepackage{graphicx}
+
+\hypersetup{
+    colorlinks=true,       % Enable colored links
+    linkcolor=blue,        % Color for internal links
+    filecolor=blue,        % Color for file links
+    citecolor=blue,        % Color for citations
+    urlcolor=blue          % Color for URLs
+}
+
+% correct bad hyphenation here
+\hyphenation{op-tical net-works semi-conduc-tor}
+
+\begin{document}
+
+\title{Personalized Handwriting Recognition Model}
+
+\author{Nathan~Cohn\\
+        Aaron~Sam\\
+        Department of Data Science, San Jose State University, San Jose, California% <-this % stops a space
+        }
+
+% The paper headers
+\markboth{Journal of \LaTeX\ Class Files,~Vol.~14, No.~8, August~2023}% 
+{Cohn \MakeLowercase{\textit{et al.}}: Personalized Handwriting Recognition Model}
+
+\maketitle
+
+\begin{abstract}
+Handwriting-to-text systems often fail to account for individual variations in handwriting, leading to inaccuracies in recognition. This report explores a novel approach for personalized handwriting recognition using machine learning models trained on individual data. By leveraging feedback loops and reinforcement learning, the proposed system adapts dynamically to unique handwriting styles, enhancing accuracy and usability across various applications. The report discusses the challenges of existing systems, outlines the solution, and evaluates performance before and after implementing reinforcement learning.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Handwriting recognition, real-time learning, convolutional neural networks, personalized models, dataset.
+\end{IEEEkeywords}
+
+\IEEEpeerreviewmaketitle
+
+\section{Introduction}
+Handwriting recognition has become an essential tool in many domains, including healthcare, education, and personal productivity. Despite advancements in this field, most handwriting recognition systems remain generic, often failing to recognize the nuances of an individual's handwriting. For example, a letter "O" in one person's handwriting might closely resemble a "0" or a "Q" in another's. Such inconsistencies can result in significant errors, particularly in sensitive domains like healthcare, where misinterpreted handwritten prescriptions can lead to severe consequences.
+
+This report introduces a personalized handwriting recognition model designed to adapt dynamically to individual handwriting styles. Unlike generic systems, this model employs a feedback loop and reinforcement learning to continually refine its predictions based on user input. The proposed approach aims to bridge the gap between generic recognition systems and the need for individualized accuracy.
+
+\section{Problem Statement}
+The inaccuracies of handwriting recognition systems stem primarily from their lack of personalization. Handwriting styles vary dramatically from one person to another, making it challenging for generic models to accurately interpret all inputs. Furthermore, these systems often struggle with non-standard inputs such as shorthand, symbols, or messy handwriting, especially when the input is collected using noisy tools like touchscreens or styluses. The inability to adapt to individual quirks results in high error rates and limited user satisfaction.
+
+To address these challenges, this project proposes a personalized handwriting recognition system that can adapt in real time. By continuously learning from the user's input, the system aims to improve accuracy over time, offering a tailored solution for each individual.
+
+\section{Dataset and Preprocessing}
+The dataset used in this study is the "English Handwritten Characters" dataset from Kaggle. It consists of 55 images for each character, including digits (0-9), uppercase letters (A-Z), and lowercase letters (a-z). This diverse dataset serves as a robust foundation for training and testing the model.
+
+Before feeding the data into the model, preprocessing steps were applied to standardize and optimize the input. The images were resized to 160x120 pixels and converted to grayscale to reduce computational complexity. Pixel values were normalized to ensure consistency across the dataset, and each character was assigned a unique integer label. Finally, the dataset was split into training and testing sets, with 80\% of the data used for training and 20\% reserved for testing. These steps ensured that the data was both clean and suitable for training the model.
+
+\section{Model Architecture}
+
+\subsection{TensorFlow-Based Model}
+The initial model was implemented using TensorFlow, leveraging a convolutional neural network (CNN) architecture. This model comprised the following layers:
+
+\textbf{Convolutional Layers:} These layers extracted spatial features from the input images by applying filters across the image. Using the ReLU activation function, non-linearities were introduced, allowing the model to learn complex patterns.
+
+\textbf{MaxPooling Layers:} MaxPooling reduced the spatial dimensions of feature maps, retaining the most important features while reducing computational load. This step also helped in making the model invariant to small translations in the input.
+
+\textbf{Dropout Layers:} Dropout was used to mitigate overfitting by randomly deactivating a fraction of neurons during training, ensuring that the model did not rely too heavily on specific features.
+
+\textbf{Dense Layers with L2 Regularization:} These fully connected layers aggregated features extracted from convolutional layers and performed the final classification. L2 regularization penalized large weights, promoting a simpler and more generalizable model.
+
+\textbf{Batch Normalization and Flattening:} Batch normalization standardized inputs to each layer, accelerating training and improving stability, while the flattening layer converted the multidimensional feature maps into a one-dimensional vector suitable for dense layers.
+
+This model achieved a test accuracy of 79\%, providing a solid foundation for further refinement.
+
+\subsection{PyTorch-Based Model}
+To enable real-time adaptability and integration with a graphical user interface (GUI), the model was re-implemented in PyTorch. The PyTorch-based model introduced several enhancements:
+
+\textbf{Convolutional Blocks:} Each block consisted of a convolutional layer, batch normalization, and ReLU activation. This combination ensured stable training and efficient feature extraction.
+
+\textbf{Pooling Layers:} Similar to the TensorFlow model, pooling layers were used to reduce spatial dimensions and computational complexity.
+
+\textbf{Additional Fully Connected Layers:} The output from the final convolutional block was passed through three fully connected layers. The first layer produced 512 features, the second reduced this to 256, and the third outputted probabilities for all 62 classes (letters and digits).
+
+\textbf{Enhanced Dropout Mechanisms:} Dropout was applied at multiple stages to further prevent overfitting, especially critical when dealing with personalized data input.
+
+\textbf{Reinforcement Learning Integration:} This model incorporated a feedback loop where users corrected misclassifications. The system used this feedback to adjust its parameters dynamically, improving accuracy over time.
+
+The PyTorch implementation demonstrated improved adaptability and provided a seamless interface for user interaction, laying the groundwork for real-time personalized handwriting recognition.
+
+\section{Model Performance}
+\subsection{Performance Before Reinforcement}
+The TensorFlow-based model achieved a baseline accuracy of 79\%. Certain characters, such as "D," were recognized with 100\% accuracy, while others, like "O," proved more challenging, with only 44\% accuracy. A confusion matrix highlighted these discrepancies, guiding further enhancements.
+
+\textbf{(insert confusion matrix image here)}
+
+\subsection{Performance After Reinforcement}
+With the integration of reinforcement learning in the PyTorch model, accuracy improved significantly for challenging inputs. The system adapted dynamically to user-specific handwriting, demonstrating the potential of personalized models.
+
+\textbf{(insert updated confusion matrix image here)}
+
+\section{Real-World Applications}
+The personalized handwriting recognition model has numerous practical applications. In the healthcare industry, it could reduce errors in digitizing handwritten prescriptions and medical records, improving patient safety and operational efficiency. In education, the system could assist students and educators by converting handwritten notes into digital formats. Additionally, the model could be tailored for accessibility, helping individuals with unique handwriting styles or disabilities to interact with digital systems more effectively.
+
+\textbf{(insert application-specific images here)}
+
+\section{Future Directions}
+To further enhance the system's capabilities, several avenues for future research and development have been identified. Expanding the dataset to include larger and more diverse handwriting samples, such as the "IAM Handwriting" dataset, would improve the model's generalization. Adopting transformer-based architectures like TrOCR could enable more sophisticated recognition of entire lines of text. Finally, training the model to handle non-standard inputs, including shorthand and noisy handwriting, would broaden its applicability.
+
+\section{Conclusion}
+This report has presented a novel approach to personalized handwriting recognition, addressing the limitations of generic systems. By leveraging dynamic learning and user feedback, the proposed model adapts to individual handwriting styles, achieving higher accuracy and usability. The advancements outlined here demonstrate the potential of personalized AI systems to improve user experiences across various domains.
+
+\section{References}
+\nocite{*}
+\printbibliography
+
+\end{document}
