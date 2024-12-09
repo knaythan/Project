@@ -7,10 +7,14 @@ from PIL import ImageGrab, Image
 import csv
 from collections import defaultdict
 from sklearn.metrics import confusion_matrix
+from sklearn.utils.class_weight import compute_class_weight
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import ToTensor
 from model import CNNModel
 import pickle
+import sys
+import random
+import argparse
 
 # Drawing prompt function
 def draw_letter_prompt(letter_queue, save_folder, image_id, csv_writer):
@@ -27,7 +31,7 @@ def draw_letter_prompt(letter_queue, save_folder, image_id, csv_writer):
 
     # Initialize tkinter window
     root = tk.Tk()
-    root.attributes("-fullscreen", True)
+    root.state('zoomed')  # Maximize the window
 
     canvas = tk.Canvas(root, width=1200, height=900, bg="white")
     canvas.pack()
@@ -53,7 +57,7 @@ def draw_letter_prompt(letter_queue, save_folder, image_id, csv_writer):
         x = canvas.winfo_rootx() + 175
         y = canvas.winfo_rooty()
         x1 = x + canvas.winfo_width() + 175
-        y1 = y + canvas.winfo_height() + 125
+        y1 = y + canvas.winfo_height() + 150
 
         # Capture the canvas area
         image = ImageGrab.grab(bbox=(x, y, x1, y1)).convert("L")
@@ -109,6 +113,9 @@ def draw_letter_prompt(letter_queue, save_folder, image_id, csv_writer):
     exit_button = tk.Button(button_frame, text="Exit", command=exit_program)
     exit_button.pack(side="left", padx=5)
 
+    # Bind the window close event to the exit_program function
+    root.protocol("WM_DELETE_WINDOW", exit_program)
+
     # Run the tkinter main loop
     root.mainloop()
 
@@ -130,81 +137,58 @@ class UserDrawnDataset(Dataset):
             image = self.transform(image)
         return image, label
     
-def reinforcement_loop(model, characters, user_images, save_folder, weights_folder, label_to_letter_dict_path, num_epochs=5, batch_size=16):
-    device = torch.device("cpu")
+def reinforcement_loop(model, label_to_letter_dict, user_images, save_folder, weights_folder, num_epochs=5, batch_size=16, prefix=""):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     criterion = nn.CrossEntropyLoss()
     transform = ToTensor()
 
-    # Load the label to letter dictionary from the pkl file
-    with open(label_to_letter_dict_path, 'rb') as f:
-        label_to_letter_dict = pickle.load(f)
-        
-    print(label_to_letter_dict)
+    # Reverse the label-to-letter dictionary to get letter-to-label mapping
+    letter_to_label_dict = {v: k for k, v in label_to_letter_dict.items()}
 
-    draw_counts = {char: 0 for char in characters}
+    print("Label to letter mapping:", label_to_letter_dict)
 
-    for char in characters:
-        correct_predictions_in_a_row = 0
-        while correct_predictions_in_a_row < 3:
+    draw_counts = {char: 0 for char in label_to_letter_dict.values()}
+
+    trained_characters = []
+
+    def calculate_global_accuracy():
+        """Randomly select one image per trained character and evaluate global accuracy."""
+        correct_predictions = 0
+        for char in trained_characters:
+            if char not in user_images or len(user_images[char]) == 0:
+                continue
+
+            # Randomly pick one image for this character
+            image = random.choice(user_images[char])
+            label = letter_to_label_dict[char]
+
+            # Preprocess and predict
+            model.eval()
+            with torch.no_grad():
+                input_tensor = torch.tensor(image, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(device)
+                output = model(input_tensor)
+                _, pred = torch.max(output, 1)
+
+            if pred.item() == label:
+                correct_predictions += 1
+
+        if len(trained_characters) == 0:
+            return 0.0
+
+        return correct_predictions / len(trained_characters)
+
+    for char in label_to_letter_dict.values():
+        correct_prediction = False
+        retries = 0
+
+        while not correct_prediction and retries < 3:
             y_true, y_pred = [], []
             images, labels = [], []
 
-            # Only focus on the current character
-            for img in user_images[char]:
-                images.append(img.astype(np.float32))  # Convert to float32
-                labels.append(characters.index(char))
-
-            dataset = UserDrawnDataset(images, labels, transform=transform)
-            loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-            # Training phase
-            model.train()
-            for epoch in range(num_epochs):
-                for inputs, targets in loader:
-                    # Ensure inputs have the correct shape [batch_size, 1, 120, 160]
-                    if inputs.ndim == 3:  # If inputs are [batch_size, 120, 160]
-                        inputs = inputs.unsqueeze(1)  # Add channel dimension
-
-                    inputs = inputs.to(device).float()  # Cast to float32
-                    targets = targets.to(device)
-
-                    optimizer.zero_grad()
-                    outputs = model(inputs)  # Forward pass
-                    loss = criterion(outputs, targets)
-                    loss.backward()
-                    optimizer.step()
-
-            # Evaluation phase
-            model.eval()
-            with torch.no_grad():
-                for inputs, targets in loader:
-                    # Ensure inputs have the correct shape [batch_size, 1, 120, 160]
-                    if inputs.ndim == 3:  # If inputs are [batch_size, 120, 160]
-                        inputs = inputs.unsqueeze(1)  # Add channel dimension
-
-                    inputs = inputs.to(device).float()  # Cast to float32
-                    outputs = model(inputs)  # Forward pass
-                    _, preds = torch.max(outputs, 1)
-                    y_true.extend(targets.cpu().numpy())
-                    y_pred.extend(preds.cpu().numpy())
-
-            # Translate labels to characters
-            y_true_chars = [label_to_letter_dict[label] for label in y_true]
-            y_pred_chars = [label_to_letter_dict[label] for label in y_pred]
-
-            # Print the numerical label that the model guessed
-            print(f"True labels: {y_true}")
-            print(f"Predicted labels: {y_pred}")
-
-            # Check if the model predicted correctly
-            if all(np.array(y_true_chars) == np.array(y_pred_chars)):
-                correct_predictions_in_a_row += 1
-                print(f"Model predicted '{char}' correctly {correct_predictions_in_a_row} times in a row.")
-            else:
-                correct_predictions_in_a_row = 0
-                print(f"Model did not predict '{char}' correctly. Collecting more data.")
+            # Ensure each character has at least 5 images
+            while len(user_images[char]) < 5:
                 new_image_id = sum(len(user_images[k]) for k in user_images) + 1
                 with open(os.path.join(save_folder, "image_mapping.csv"), "a", newline="") as file:
                     csv_writer = csv.writer(file)
@@ -214,22 +198,122 @@ def reinforcement_loop(model, characters, user_images, save_folder, weights_fold
                 user_images[char].append(np.array(image) / 255.0)
                 draw_counts[char] += 1
 
+            # Prepare data for training
+            for other_char in label_to_letter_dict.values():
+                sampled_images = user_images.get(other_char, [])
+                labels.extend([letter_to_label_dict[other_char]] * len(sampled_images))
+                images.extend(sampled_images)
+
+            # Shuffle data
+            combined = list(zip(images, labels))
+            random.shuffle(combined)
+            images, labels = zip(*combined)
+
+            # Create the dataset
+            dataset = UserDrawnDataset(list(images), list(labels), transform=transform)
+            loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+            # Training phase
+            model.train()
+            total_correct = 0
+            total_samples = 0
+            for epoch in range(num_epochs):
+                for inputs, targets in loader:
+                    if inputs.ndim == 3:
+                        inputs = inputs.unsqueeze(1)
+
+                    inputs = inputs.to(device).float()
+                    targets = targets.to(device)
+
+                    optimizer.zero_grad()
+                    outputs = model(inputs)
+                    loss = criterion(outputs, targets)
+                    loss.backward()
+                    optimizer.step()
+
+                    _, preds = torch.max(outputs, 1)
+                    total_correct += (preds == targets).sum().item()
+                    total_samples += targets.size(0)
+
+            training_accuracy = total_correct / total_samples
+            print(f"Training accuracy for '{char}': {training_accuracy * 100:.2f}%")
+
+            # Evaluation phase
+            model.eval()
+            batch_correct = 0
+            total_batch_samples = 0
+
+            with torch.no_grad():
+                for inputs, targets in loader:
+                    if inputs.ndim == 3:
+                        inputs = inputs.unsqueeze(1)
+
+                    inputs = inputs.to(device).float()
+                    targets = targets.to(device)
+
+                    outputs = model(inputs)
+                    _, preds = torch.max(outputs, 1)
+
+                    batch_correct += (preds == targets).sum().item()
+                    total_batch_samples += targets.size(0)
+
+            batch_accuracy = batch_correct / total_batch_samples
+            global_accuracy = calculate_global_accuracy()
+
+            print(f"Batch accuracy for '{char}': {batch_accuracy * 100:.2f}%")
+            print(f"Global accuracy across trained and tested characters: {global_accuracy * 100:.2f}%")
+
+            if batch_accuracy >= 0.85 and global_accuracy >= 0.85:
+                correct_prediction = True
+                trained_characters.append(char)
+                print(f"Model predicted '{char}' correctly with sufficient accuracy.")
+            else:
+                print(f"Retrying with existing data for '{char}'.")
+                retries += 1
+
+        if not correct_prediction:
+            print(f"Exhausted retries for '{char}'. Collecting more data.")
+            new_image_id = sum(len(user_images[k]) for k in user_images) + 1
+            with open(os.path.join(save_folder, "image_mapping.csv"), "a", newline="") as file:
+                csv_writer = csv.writer(file)
+                draw_letter_prompt([char], save_folder, new_image_id, csv_writer)
+            image_path = os.path.join(save_folder, f"{new_image_id:04d}.png")
+            image = Image.open(image_path).resize((160, 120)).convert('L')
+            user_images[char].append(np.array(image) / 255.0)
+            draw_counts[char] += 1
+
     print("All characters have been trained and evaluated!")
     print("Draw counts:", draw_counts)
 
-    # Save the reinforced model weights
-    reinforced_weights_path = os.path.join(weights_folder, 'reinforced_cnn_weights.pth')
+    if prefix != "":
+        reinforced_weights_path = os.path.join(weights_folder, f"{prefix}_reinforced_cnn_weights.pth")
+    else:
+        reinforced_weights_path = os.path.join(weights_folder, "reinforced_cnn_weights.pth")
     torch.save(model.state_dict(), reinforced_weights_path)
     print(f"Reinforced model weights saved to {reinforced_weights_path}")
 
-
 # Main
 if __name__ == "__main__":
-    characters = "0123456789Oom"
     save_folder = "user_drawings"
-    weights_folder = "weights"
-    label_to_letter_dict_path = os.path.join(weights_folder, "label_to_letter_dict.pkl")
     user_images = defaultdict(list)
+    weights_folder = "weights"
+
+    parser = argparse.ArgumentParser(description="Evaluate Character Classification Model")
+    parser.add_argument("--test", type=str, nargs='?', const='lower', help="Use test model and dictionary paths")
+    parser.add_argument("-R", "--reinforced", action="store_true", help="Use the reinforced model")
+    args = parser.parse_args()
+
+    prefix = args.test
+    model_type = 'reinforced' if args.reinforced else 'cnn'
+    model_path = f'./weights/{prefix}_{model_type}_weights.pth' if args.test else f'./weights/{model_type}_weights.pth'
+    dict_path = f'./weights/{prefix}.pkl' if args.test else './weights/label_to_letter_dict.pkl'
+    
+    print(f"Model path: {model_path}")
+    print(f"Dictionary path: {dict_path}")
+    
+    # Load the label to letter dictionary from the pkl file
+    with open(dict_path, 'rb') as f:
+        label_to_letter_dict = pickle.load(f)
 
     existing_characters = set()
     if os.path.exists(os.path.join(save_folder, "image_mapping.csv")):
@@ -246,7 +330,7 @@ if __name__ == "__main__":
         csv_writer = csv.writer(file)
         if not existing_characters:
             csv_writer.writerow(["Path", "Label"])
-        for char in characters:
+        for char in label_to_letter_dict.values():
             if char not in existing_characters:
                 image_id = sum(len(user_images[k]) for k in user_images) + 1
                 draw_letter_prompt([char], save_folder, image_id, csv_writer)
@@ -255,16 +339,15 @@ if __name__ == "__main__":
                 user_images[char].append(np.array(image) / 255.0)
 
     # Instantiate the model and load the weights
-    num_classes = 62  # 10 digits + 26 lowercase + 26 uppercase
+    num_classes = len(label_to_letter_dict)  # 10 digits + 26 lowercase + 26 uppercase
     model = CNNModel(num_classes=num_classes)
 
     # Initialize the fully connected layers
     input_shape = (1, 160, 120)
     model.initialize_fc_layers(input_shape)
 
-    weights_path = './weights/cnn_weights.pth'
-    model.load_state_dict(torch.load(weights_path, map_location=torch.device('cpu')))
+    model.load_state_dict(torch.load(model_path, map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu'), weights_only=True))
     model.eval()
 
     print("Model loaded successfully!")
-    reinforcement_loop(model, characters, user_images, save_folder, weights_folder, label_to_letter_dict_path)
+    reinforcement_loop(model, label_to_letter_dict, user_images, save_folder, weights_folder, prefix=prefix)

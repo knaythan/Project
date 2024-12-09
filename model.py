@@ -79,7 +79,7 @@ class CharacterModel:
     def predict(self, image):
         self.model.eval()
         with torch.no_grad():
-            image = torch.tensor(image, dtype=torch.float32).unsqueeze(0).unsqueeze(0)  # Add batch and channel dimensions
+            image = image.clone().detach().unsqueeze(0).unsqueeze(0).float()  # Add batch and channel dimensions
             output = self.model(image)
             _, predicted_label = torch.max(output, 1)
             predicted_character = self.label_to_letter_dict[predicted_label.item()]
